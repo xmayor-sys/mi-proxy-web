@@ -26,6 +26,13 @@ function normalizeInput(input) {
   return 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(input)
 }
 
+// Reescribe "location" en el JS de las webs para que las redirecciones pasen por el proxy
+function jsRewrite(js) {
+  return js
+    .replace(/\b(?:window|document|self|top|parent)\.location\b/g, '__pxL')
+    .replace(/(?<![\w$.'"`])location(?![\w$'"`:])/g, '__pxL')
+}
+
 // Script que se inyecta en cada página para que el JS de la web también pase por el proxy
 const CLIENT_JS = String.raw`(function(){
 if (window.__PX_LOADED__) return; window.__PX_LOADED__ = 1;
@@ -49,6 +56,29 @@ function fixSet(v){
   }).join(', ');
 }
 var _sa = Element.prototype.setAttribute;
+
+/* "location" falso: el JS de la web lo usa en vez del real */
+var L = {
+  get href(){ return cur(); },
+  set href(v){ location.href = px(v); },
+  assign: function(v){ location.href = px(v); },
+  replace: function(v){ location.replace(px(v)); },
+  reload: function(){ location.reload(); },
+  toString: function(){ return cur(); }
+};
+['origin','protocol','host','hostname','port','pathname','search'].forEach(function(k){
+  Object.defineProperty(L, k, {
+    get: function(){ return new URL(cur())[k]; },
+    set: function(v){ var u = new URL(cur()); u[k] = v; location.href = px(u.href); },
+    enumerable: true
+  });
+});
+Object.defineProperty(L, 'hash', {
+  get: function(){ return location.hash; },
+  set: function(v){ location.hash = v; },
+  enumerable: true
+});
+window.__pxL = L;
 
 /* fetch */
 var _fetch = window.fetch;
@@ -158,13 +188,14 @@ function bar(){
   host.style.cssText = 'all:initial;position:fixed;right:12px;bottom:12px;z-index:2147483647';
   var root = host.attachShadow({ mode: 'open' });
   root.innerHTML = '<style>' +
-    '*{box-sizing:border-box;font:14px system-ui,sans-serif}' +
+    '*{box-sizing:border-box;font:14px monospace}' +
     '#w{display:flex;flex-direction:column;align-items:flex-end}' +
-    '.b{width:44px;height:44px;border-radius:50%;border:0;background:#0070f3;color:#fff;font-size:20px;cursor:pointer;box-shadow:0 2px 10px #0006}' +
-    '.p{display:none;gap:6px;background:#1c1c1e;padding:8px;border-radius:12px;box-shadow:0 2px 14px #0008;margin-bottom:8px}' +
+    '.b{width:44px;height:44px;border-radius:50%;border:1px solid #00ff41;background:#000;color:#00ff41;font-size:20px;cursor:pointer;box-shadow:0 0 12px #00ff4188}' +
+    '.p{display:none;gap:6px;background:#000;border:1px solid #00ff41;padding:8px;border-radius:8px;box-shadow:0 0 14px #00ff4166;margin-bottom:8px}' +
     '.o .p{display:flex}' +
-    'input{width:min(55vw,360px);padding:8px;border-radius:8px;border:0;background:#2c2c2e;color:#fff}' +
-    '.g{padding:8px 12px;border-radius:8px;border:0;background:#0070f3;color:#fff;cursor:pointer}' +
+    'input{width:min(55vw,360px);padding:8px;border-radius:6px;border:1px solid #0a5;background:#050505;color:#00ff41;outline:0}' +
+    '.g{padding:8px 12px;border-radius:6px;border:1px solid #00ff41;background:#000;color:#00ff41;cursor:pointer}' +
+    '.g:hover{background:#00ff41;color:#000}' +
     '</style><div id="w"><div class="p"><input id="i" placeholder="URL o busqueda"><button class="g" id="go">Ir</button><button class="g" id="hm">Inicio</button></div><button class="b" id="t">\u{1F310}</button></div>';
   var w = root.getElementById('w'), i = root.getElementById('i');
   i.value = cur();
@@ -186,32 +217,72 @@ function homePage() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mi Proxy Web</title>
+  <title>Xabier Proxy</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: #121212; color: #fff; margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-    h1 { font-size: 2.2rem; margin-bottom: 24px; }
-    form { display: flex; gap: 8px; width: 100%; max-width: 560px; }
-    input { flex: 1; padding: 14px; border-radius: 10px; border: 1px solid #333; background: #1e1e1e; color: #fff; font-size: 1rem; }
-    button { padding: 14px 22px; border-radius: 10px; border: 0; background: #0070f3; color: #fff; font-size: 1rem; cursor: pointer; }
-    .chips { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-    .chips a { color: #9ecbff; background: #1e1e1e; padding: 8px 14px; border-radius: 20px; text-decoration: none; font-size: .9rem; }
-    p { color: #888; margin-top: 26px; font-size: .85rem; text-align: center; }
+    body { margin: 0; min-height: 100vh; background: #000; color: #00ff41; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+    #m { position: fixed; inset: 0; z-index: 0; opacity: .35; }
+    main { position: relative; z-index: 1; width: 100%; max-width: 640px; text-align: center; }
+    h1 { font-size: 2.4rem; margin: 0 0 6px; text-shadow: 0 0 12px #00ff41; letter-spacing: 2px; }
+    .sub { color: #0a8; margin: 0 0 28px; font-size: .9rem; }
+    form { display: flex; align-items: center; gap: 8px; background: #000c; border: 1px solid #00ff41; border-radius: 8px; padding: 8px 10px; box-shadow: 0 0 18px #00ff4144; }
+    .pr { white-space: nowrap; color: #0c6; font-size: .85rem; }
+    input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #00ff41; font: 1rem 'Courier New', monospace; padding: 8px 4px; }
+    input::placeholder { color: #0a6; }
+    button { background: #00ff41; color: #000; border: 0; border-radius: 6px; padding: 10px 18px; font: bold 1rem 'Courier New', monospace; cursor: pointer; }
+    button:hover { box-shadow: 0 0 14px #00ff41; }
+    .grid { margin-top: 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+    .grid a { display: block; text-decoration: none; color: #00ff41; background: #000c; border: 1px solid #0a5; border-radius: 8px; padding: 16px 8px; transition: .15s; }
+    .grid a:hover { border-color: #00ff41; box-shadow: 0 0 16px #00ff4166; transform: translateY(-3px); }
+    .grid span { display: block; font-size: 1.8rem; margin-bottom: 6px; }
+    h2 { font-size: .95rem; color: #0c6; margin: 26px 0 0; font-weight: normal; text-align: left; }
+    .note { color: #086; font-size: .8rem; margin-top: 22px; }
+    footer { position: relative; z-index: 1; margin-top: 30px; color: #0a6; font-size: .85rem; text-shadow: 0 0 6px #00ff4155; }
   </style>
 </head>
 <body>
-  <h1>Mi Proxy Web</h1>
-  <form action="/" method="GET">
-    <input type="text" name="url" placeholder="Escribe una URL o busca algo..." required autofocus autocomplete="off">
-    <button type="submit">Ir</button>
-  </form>
-  <div class="chips">
-    <a href="/?url=https%3A%2F%2Fes.wikipedia.org">Wikipedia</a>
-    <a href="/?url=https%3A%2F%2Fnews.ycombinator.com">Hacker News</a>
-    <a href="/?url=https%3A%2F%2Fduckduckgo.com">DuckDuckGo</a>
-    <a href="/?url=https%3A%2F%2Finfo.cern.ch">info.cern.ch</a>
-  </div>
-  <p>Si escribes algo que no es una URL, lo busca en DuckDuckGo.</p>
+  <canvas id="m"></canvas>
+  <main>
+    <h1>&gt; XABIER PROXY_</h1>
+    <p class="sub">// navega sin salirte del proxy</p>
+    <form action="/" method="GET">
+      <span class="pr">root@xabier:~$</span>
+      <input type="text" name="url" placeholder="url o busqueda..." required autofocus autocomplete="off">
+      <button type="submit">IR</button>
+    </form>
+
+    <h2># accesos directos</h2>
+    <div class="grid">
+      <a href="/?url=https%3A%2F%2Fwww.google.com"><span>&#128269;</span>Google</a>
+      <a href="/?url=https%3A%2F%2Fwww.youtube.com"><span>&#9654;&#65039;</span>YouTube</a>
+      <a href="/?url=https%3A%2F%2Fduckduckgo.com"><span>&#129414;</span>DuckDuckGo</a>
+      <a href="/?url=https%3A%2F%2Fes.wikipedia.org"><span>&#128214;</span>Wikipedia</a>
+    </div>
+
+    <h2># juegos</h2>
+    <div class="grid">
+      <a href="/?url=https%3A%2F%2Fpoki.com"><span>&#127918;</span>Poki</a>
+      <a href="/?url=https%3A%2F%2Fwww.crazygames.com"><span>&#128377;&#65039;</span>CrazyGames</a>
+      <a href="/?url=https%3A%2F%2Fwww.y8.com"><span>&#128126;</span>Y8</a>
+      <a href="/?url=https%3A%2F%2Fnews.ycombinator.com"><span>&#128225;</span>Hacker News</a>
+    </div>
+
+    <p class="note">Si escribes algo que no es una URL, lo busca en DuckDuckGo.</p>
+  </main>
+  <footer>Made by Xabier Mayor &copy; 2026</footer>
+  <script>
+    var c = document.getElementById('m'), x = c.getContext('2d'), d = [];
+    function r() { c.width = innerWidth; c.height = innerHeight; d = Array(Math.ceil(c.width / 16)).fill(1); }
+    r(); onresize = r;
+    setInterval(function () {
+      x.fillStyle = 'rgba(0,0,0,.08)'; x.fillRect(0, 0, c.width, c.height);
+      x.fillStyle = '#0f0'; x.font = '14px monospace';
+      d.forEach(function (v, i) {
+        x.fillText(String.fromCharCode(0x30A0 + Math.random() * 96), i * 16, v * 16);
+        d[i] = (v * 16 > c.height && Math.random() > 0.975) ? 0 : v + 1;
+      });
+    }, 50);
+  </script>
 </body>
 </html>`
   return new Response(html, { headers: { 'content-type': 'text/html;charset=UTF-8' } })
@@ -224,17 +295,23 @@ async function handleRequest(request) {
 
   let targetUrl = url.searchParams.get('url')
 
-  // Peticiones relativas "escapadas" (JS, fuentes, etc.): las resolvemos con el Referer
+  // Rutas sueltas que se escapan del proxy: las resolvemos con el Referer o con la cookie
   if (!targetUrl && url.pathname !== '/') {
+    let base = null
     const ref = request.headers.get('Referer')
     if (ref) {
       try {
-        const refUrl = new URL(ref)
-        const refTarget = refUrl.searchParams.get('url')
-        if (refUrl.origin === url.origin && refTarget) {
-          targetUrl = new URL(url.pathname + url.search, normalizeInput(refTarget)).href
-        }
+        const r = new URL(ref)
+        const t = r.searchParams.get('url')
+        if (r.origin === url.origin && t) base = normalizeInput(t)
       } catch (e) {}
+    }
+    if (!base) {
+      const m = (request.headers.get('Cookie') || '').match(/(?:^|;\s*)__pxo=([^;]+)/)
+      if (m) base = decodeURIComponent(m[1])
+    }
+    if (base) {
+      try { targetUrl = new URL(url.pathname + url.search, base).href } catch (e) {}
     }
   }
 
@@ -319,9 +396,19 @@ async function handleRequest(request) {
     return new Response(css, { status: response.status, headers: newHeaders })
   }
 
+  // JavaScript: reescribimos "location" para que no se escape del proxy
+  if (/javascript|ecmascript/.test(contentType)) {
+    const js = jsRewrite(await response.text())
+    newHeaders.delete('content-length')
+    newHeaders.delete('content-encoding')
+    return new Response(js, { status: response.status, headers: newHeaders })
+  }
+
   // HTML
   if (contentType.includes('text/html')) {
     newHeaders.delete('content-length')
+    // Cookie propia para recordar la web actual (rescata rutas sueltas)
+    newHeaders.append('Set-Cookie', '__pxo=' + encodeURIComponent(target.origin) + '; Path=/; SameSite=Lax; Secure')
 
     const attr = (name) => ({
       element(el) {
@@ -379,6 +466,7 @@ async function handleRequest(request) {
       .on('object[data]', attr('data'))
       .on('input[src]', attr('src'))
       .on('image[href]', attr('href'))
+      .on('form[action]', attr('action'))
       .on('[style]', {
         element(el) {
           const v = el.getAttribute('style')
@@ -397,6 +485,26 @@ async function handleRequest(request) {
           }
         }
       })
+      // JS dentro del HTML (<script>...</script>)
+      .on('script', {
+        ok: true,
+        buf: '',
+        element(el) {
+          if (el.getAttribute('src')) { this.ok = false; return }
+          const ty = (el.getAttribute('type') || '').toLowerCase()
+          this.ok = !ty || ty.includes('javascript') || ty === 'module'
+        },
+        text(t) {
+          if (!this.ok) return
+          this.buf += t.text
+          if (t.lastInTextNode) {
+            t.replace(jsRewrite(this.buf), { html: true })
+            this.buf = ''
+          } else {
+            t.remove()
+          }
+        }
+      })
 
     return rewriter.transform(new Response(response.body, {
       status: response.status,
@@ -405,7 +513,7 @@ async function handleRequest(request) {
     }))
   }
 
-  // Todo lo demás (imágenes, JS, fuentes, vídeo...) tal cual
+  // Todo lo demás (imágenes, fuentes, vídeo...) tal cual
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
