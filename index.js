@@ -140,6 +140,17 @@ document.addEventListener('submit', function(e){
   }
 }, false);
 
+/* interceptar CUALQUIER navegación (botones, location.href, JS de la web) */
+if (window.navigation) {
+  navigation.addEventListener('navigate', function(e){
+    if (!e.cancelable || e.hashChange || e.downloadRequest !== null) return;
+    var d = e.destination.url;
+    if (d.indexOf(PFX) === 0 || d.indexOf(P + '/?home') === 0 || SKIP.test(d)) return;
+    e.preventDefault();
+    location.href = px(d);
+  });
+}
+
 /* barra flotante: ir a otra URL / buscar / inicio */
 function bar(){
   if (window.top !== window.self) return;
@@ -160,7 +171,7 @@ function bar(){
   function go(){ if (i.value.trim()) location.href = P + '/?url=' + encodeURIComponent(i.value.trim()); }
   root.getElementById('t').onclick = function(){ w.classList.toggle('o'); if (w.classList.contains('o')) i.focus(); };
   root.getElementById('go').onclick = go;
-  root.getElementById('hm').onclick = function(){ location.href = P + '/'; };
+  root.getElementById('hm').onclick = function(){ location.href = P + '/?home=1'; };
   i.addEventListener('keydown', function(e){ e.stopPropagation(); if (e.key === 'Enter') go(); });
   i.addEventListener('keyup', function(e){ e.stopPropagation(); });
   i.addEventListener('keypress', function(e){ e.stopPropagation(); });
